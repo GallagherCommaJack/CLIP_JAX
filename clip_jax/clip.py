@@ -186,7 +186,11 @@ def load(name: str, device: Union[str, torch.device] = "cpu", jit=True):
     return image_fn, text_fn, jax_params, _transform(clip_params["image_resolution"])
 
 
-def tokenize(texts: Union[str, List[str]], context_length: int = 77) -> torch.LongTensor:
+def tokenize(
+    texts: Union[str, List[str]],
+    context_length: int = 77,
+    truncate=True,
+) -> torch.LongTensor:
     """
     Returns the tokenized representation of given input string(s)
 
@@ -212,7 +216,24 @@ def tokenize(texts: Union[str, List[str]], context_length: int = 77) -> torch.Lo
 
     for i, tokens in enumerate(all_tokens):
         if len(tokens) > context_length:
-            raise RuntimeError(f"Input {texts[i]} is too long for context length {context_length}")
-        result[i, :len(tokens)] = tokens
+            if truncate:
+                tokens = tokens[:context_length]
+            else:
+                raise RuntimeError(
+                    f"Input {texts[i]} is too long for context length {context_length}"
+                )
+        result[i, : len(tokens)] = tokens
 
     return result
+
+
+def detokenize(toks: torch.LongTensor):
+    if len(toks.shape) == 1:
+        toks = toks[1:]
+        for i, t in enumerate(toks):
+            if t == 49407:
+                toks = toks[:i]
+                break
+        return _tokenizer.decode(toks)
+    else:
+        return [detokenize(t) for t in toks]
