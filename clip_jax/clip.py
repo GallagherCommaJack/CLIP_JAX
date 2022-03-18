@@ -2,7 +2,7 @@ import hashlib
 import os
 import urllib
 import warnings
-from typing import Union, List
+from typing import Union, List, Any
 
 import jax
 import haiku as hk
@@ -190,7 +190,7 @@ def tokenize(
     texts: Union[str, List[str]],
     context_length: int = 77,
     truncate=True,
-) -> torch.LongTensor:
+) -> np.ndarray:
     """
     Returns the tokenized representation of given input string(s)
 
@@ -227,7 +227,7 @@ def tokenize(
     return result
 
 
-def detokenize(toks: torch.LongTensor):
+def detokenize(toks: np.ndarray):
     if len(toks.shape) == 1:
         toks = toks[1:]
         for i, t in enumerate(toks):
