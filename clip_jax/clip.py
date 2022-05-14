@@ -40,13 +40,23 @@ def _download(url: str, root: str = os.path.expanduser("~/.cache/clip")):
         raise RuntimeError(f"{download_target} exists and is not a regular file")
 
     if os.path.isfile(download_target):
-        if hashlib.sha256(open(download_target, "rb").read()).hexdigest() == expected_sha256:
+        if (
+            hashlib.sha256(open(download_target, "rb").read()).hexdigest()
+            == expected_sha256
+        ):
             return download_target
         else:
-            warnings.warn(f"{download_target} exists, but the SHA256 checksum does not match; re-downloading the file")
+            warnings.warn(
+                f"{download_target} exists, but the SHA256 checksum does not match; re-downloading the file"
+            )
 
     with urllib.request.urlopen(url) as source, open(download_target, "wb") as output:
-        with tqdm(total=int(source.info().get("Content-Length")), ncols=80, unit='iB', unit_scale=True) as loop:
+        with tqdm(
+            total=int(source.info().get("Content-Length")),
+            ncols=80,
+            unit="iB",
+            unit_scale=True,
+        ) as loop:
             while True:
                 buffer = source.read(8192)
                 if not buffer:
@@ -55,21 +65,31 @@ def _download(url: str, root: str = os.path.expanduser("~/.cache/clip")):
                 output.write(buffer)
                 loop.update(len(buffer))
 
-    if hashlib.sha256(open(download_target, "rb").read()).hexdigest() != expected_sha256:
-        raise RuntimeError(f"Model has been downloaded but the SHA256 checksum does not not match")
+    if (
+        hashlib.sha256(open(download_target, "rb").read()).hexdigest()
+        != expected_sha256
+    ):
+        raise RuntimeError(
+            f"Model has been downloaded but the SHA256 checksum does not not match"
+        )
 
     return download_target
 
 
 def _transform(n_px):
-    return Compose([
-        Resize(n_px, interpolation=Image.BICUBIC),
-        CenterCrop(n_px),
-        lambda image: image.convert("RGB"),
-        ToTensor(),
-        Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
-        lambda tensor: tensor.cpu().detach().numpy()
-    ])
+    return Compose(
+        [
+            Resize(n_px, interpolation=Image.BICUBIC),
+            CenterCrop(n_px),
+            lambda image: image.convert("RGB"),
+            ToTensor(),
+            Normalize(
+                (0.48145466, 0.4578275, 0.40821073),
+                (0.26862954, 0.26130258, 0.27577711),
+            ),
+            lambda tensor: tensor.cpu().detach().numpy(),
+        ]
+    )
 
 
 def available_models() -> List[str]:
@@ -98,9 +118,13 @@ def convert_params(torch_state, jax_params):
             "embeddings": "weight",
         }.get(tensor_name, tensor_name)
 
-        tensor_path = "/".join(name.split("/")[:-1]).replace("/~/", ".").replace("/", ".").replace("resblocks",
-                                                                                                   "resblocks.").replace(
-            "~", "")
+        tensor_path = (
+            "/".join(name.split("/")[:-1])
+            .replace("/~/", ".")
+            .replace("/", ".")
+            .replace("resblocks", "resblocks.")
+            .replace("~", "")
+        )
         new_tensor = value
 
         pytorch_name = tensor_path + "." + tensor_name if tensor_path else tensor_name
@@ -152,11 +176,17 @@ def load(name: str, device: Union[str, torch.device] = "cpu", jit=True):
     elif os.path.isfile(name):
         model_path = name
     else:
-        raise RuntimeError(f"Model {name} not found; available models = {available_models()}")
+        raise RuntimeError(
+            f"Model {name} not found; available models = {available_models()}"
+        )
 
     try:
         # loading JIT archive
-        state_dict = torch.jit.load(model_path, map_location=device if jit else "cpu").eval().state_dict()
+        state_dict = (
+            torch.jit.load(model_path, map_location=device if jit else "cpu")
+            .eval()
+            .state_dict()
+        )
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
 
@@ -177,7 +207,11 @@ def load(name: str, device: Union[str, torch.device] = "cpu", jit=True):
 
     rng_key = jax.random.PRNGKey(42)
     transformed = hk.transform(clip_jax)
-    jax_params = transformed.init(rng=rng_key, image=jnp.zeros((1, 3, 224, 224)), text=jnp.zeros((1, 77), dtype=jnp.int16))
+    jax_params = transformed.init(
+        rng=rng_key,
+        image=jnp.zeros((1, 3, 224, 224)),
+        text=jnp.zeros((1, 77), dtype=jnp.int16),
+    )
     jax_params = convert_params(state_dict, jax_params)
 
     image_fn = hk.without_apply_rng(hk.transform(vit_jax)).apply
@@ -186,7 +220,9 @@ def load(name: str, device: Union[str, torch.device] = "cpu", jit=True):
     return image_fn, text_fn, jax_params, _transform(clip_params["image_resolution"])
 
 
-def tokenize(texts: Union[str, List[str]], context_length: int = 77) -> torch.LongTensor:
+def tokenize(
+    texts: Union[str, List[str]], context_length: int = 77, truncate=True
+) -> torch.LongTensor:
     """
     Returns the tokenized representation of given input string(s)
 
@@ -209,10 +245,11 @@ def tokenize(texts: Union[str, List[str]], context_length: int = 77) -> torch.Lo
     eot_token = _tokenizer.encoder["<|endoftext|>"]
     all_tokens = [[sot_token] + _tokenizer.encode(text) + [eot_token] for text in texts]
     result = np.zeros((len(all_tokens), context_length), dtype=np.int32)
-
     for i, tokens in enumerate(all_tokens):
-        if len(tokens) > context_length:
-            raise RuntimeError(f"Input {texts[i]} is too long for context length {context_length}")
-        result[i, :len(tokens)] = tokens
+        if len(tokens) > context_length and not truncate:
+            raise RuntimeError(
+                f"Input {texts[i]} is too long for context length {context_length}"
+            )
+        result[i, : len(tokens)] = tokens[:context_length]
 
     return result
