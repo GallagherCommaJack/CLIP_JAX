@@ -206,7 +206,7 @@ class CLIP(hk.Module):
     def encode_image(self, image):
         return self.visual(image)
 
-    def encode_text(self, text):
+    def encode_text(self, text, return_tok_embs: bool = False):
         x = self.token_embedding(text)  # [batch_size, n_ctx, d_model]
 
         x = x + self.positional_embedding
@@ -218,9 +218,11 @@ class CLIP(hk.Module):
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
-        x = x[jnp.arange(x.shape[0]), text.argmax(axis=-1)] @ self.text_projection
-
-        return x
+        s_emb = x[jnp.arange(x.shape[0]), text.argmax(axis=-1)] @ self.text_projection
+        if return_tok_embs:
+            return x, s_emb
+        else:
+            return s_emb
 
     def forward(self, image, text):
         image_features = self.encode_image(image)
